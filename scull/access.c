@@ -351,7 +351,7 @@ static void scull_access_setup (dev_t devno, struct scull_adev_info *devinfo)
 
 	/* Do the cdev stuff. */
 	cdev_init(&dev->cdev, devinfo->fops);
-	kobject_set_name(&dev->cdev.kobj, devinfo->name);
+	kobject_set_name(&dev->cdev.kobj, "%s", devinfo->name);
 	dev->cdev.owner = THIS_MODULE;
 	err = cdev_add (&dev->cdev, devno, 1);
         /* Fail gracefully if need be */
