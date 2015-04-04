@@ -1,4 +1,4 @@
-/*
+﻿/*
  * scull.h -- definitions for the char module
  *
  * Copyright (C) 2001 Alessandro Rubini and Jonathan Corbet
@@ -88,6 +88,7 @@ struct scull_dev {
 	struct scull_qset *data;  /* Pointer to first quantum set */
 	int quantum;              /* the current quantum size */
 	int qset;                 /* the current array size */
+	//write后,size会增大
 	unsigned long size;       /* amount of data stored here */
 	unsigned int access_key;  /* used by sculluid and scullpriv */
 	struct semaphore sem;     /* mutual exclusion semaphore     */

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * main.c -- the bare scull char module
  *
  * Copyright (C) 2001 Alessandro Rubini and Jonathan Corbet
@@ -68,8 +68,11 @@ int scull_trim(struct scull_dev *dev)
 	for (dptr = dev->data; dptr; dptr = next) { /* all the list items */
 		if (dptr->data) {
 			for (i = 0; i < qset; i++)
+				//释放全部的quentum
 				kfree(dptr->data[i]);
+			//释放quentum集指针
 			kfree(dptr->data);
+			//释放完成后需要将指针指NULL
 			dptr->data = NULL;
 		}
 		next = dptr->next;
@@ -258,6 +261,7 @@ int scull_release(struct inode *inode, struct file *filp)
 /*
  * Follow the list
  */
+//查找链表中第n个quantum set,如果quantum set不存在,就创建这个quantum set
 struct scull_qset *scull_follow(struct scull_dev *dev, int n)
 {
 	struct scull_qset *qs = dev->data;
@@ -300,14 +304,17 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
 
 	if (down_interruptible(&dev->sem))
 		return -ERESTARTSYS;
+	//检查f_pos的合法性
 	if (*f_pos >= dev->size)
 		goto out;
 	if (*f_pos + count > dev->size)
 		count = dev->size - *f_pos;
 
 	/* find listitem, qset index, and offset in the quantum */
+	//item是quantum set的索引
 	item = (long)*f_pos / itemsize;
 	rest = (long)*f_pos % itemsize;
+	//s_pos是quantum在quantum set中的索引,q_pos是quantum内部的偏移
 	s_pos = rest / quantum; q_pos = rest % quantum;
 
 	/* follow the list up to the right position (defined elsewhere) */
@@ -317,6 +324,7 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
 		goto out; /* don't fill holes */
 
 	/* read only up to the end of this quantum */
+	//read每次只能操作一个quantum,读取的数据最大为一个quantum大小
 	if (count > quantum - q_pos)
 		count = quantum - q_pos;
 
@@ -355,12 +363,14 @@ ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
 	if (dptr == NULL)
 		goto out;
 	if (!dptr->data) {
+		//如果quantum set中的指针数组不存在就创建指针数组
 		dptr->data = kmalloc(qset * sizeof(char *), GFP_KERNEL);
 		if (!dptr->data)
 			goto out;
 		memset(dptr->data, 0, qset * sizeof(char *));
 	}
 	if (!dptr->data[s_pos]) {
+		//如果quantum set中的指针数组中的quantum不存在就创建指quantum
 		dptr->data[s_pos] = kmalloc(quantum, GFP_KERNEL);
 		if (!dptr->data[s_pos])
 			goto out;
@@ -600,10 +610,11 @@ void scull_cleanup_module(void)
 static void scull_setup_cdev(struct scull_dev *dev, int index)
 {
 	int err, devno = MKDEV(scull_major, scull_minor + index);
-    
+
 	cdev_init(&dev->cdev, &scull_fops);
 	dev->cdev.owner = THIS_MODULE;
-	dev->cdev.ops = &scull_fops;
+	//cdev在cdev_init中已经获取了file_operations指针了
+	/*dev->cdev.ops = &scull_fops;*/
 	err = cdev_add (&dev->cdev, devno, 1);
 	/* Fail gracefully if need be */
 	if (err)
