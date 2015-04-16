@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Sample disk driver, from the beginning.
  */
 
@@ -47,6 +47,7 @@ module_param(request_mode, int, 0);
 /*
  * Minor number and partition management.
  */
+//SBULL_MINORS是每个sbull设备所支持的次设备号的数量
 #define SBULL_MINORS	16
 #define MINOR_SHIFT	4
 #define DEVNUM(kdevnum)	(MINOR(kdev_t_to_nr(kdevnum)) >> MINOR_SHIFT
@@ -203,11 +204,14 @@ static int sbull_make_request(struct request_queue *q, struct bio *bio)
 
 static int sbull_open(struct block_device *bdev, fmode_t mode)
 {
+	//gendisk->private_data中保留的是sbull_dev指针
 	struct sbull_dev *dev = bdev->bd_disk->private_data;
 
+	//删除定时器
 	del_timer_sync(&dev->timer);
 	spin_lock(&dev->lock);
-	if (! dev->users) 
+	if (! dev->users)
+		//没有用户,即第一次打开时才会调用check_disk_change
 		check_disk_change(bdev);
 	dev->users++;
 	spin_unlock(&dev->lock);
@@ -222,6 +226,7 @@ static int sbull_release(struct gendisk *disk, fmode_t mode)
 	dev->users--;
 
 	if (!dev->users) {
+		//没有用户了,添加定时器,超时的话就会触发定时器,从而是设备无效
 		dev->timer.expires = jiffies + INVALIDATE_DELAY;
 		add_timer(&dev->timer);
 	}
@@ -264,9 +269,11 @@ void sbull_invalidate(unsigned long ldev)
 	struct sbull_dev *dev = (struct sbull_dev *) ldev;
 
 	spin_lock(&dev->lock);
-	if (dev->users || !dev->data) 
+	if (dev->users || !dev->data)
+		//有用户,但是数据无效
 		printk (KERN_WARNING "sbull: timer sanity check failed\n");
 	else
+		//有用户数据有效 || 无用户数据有效 || 无用户数据无效
 		dev->media_change = 1;
 	spin_unlock(&dev->lock);
 }
@@ -373,6 +380,7 @@ static void setup_device(struct sbull_dev *dev, int which)
 	/*
 	 * And the gendisk structure.
 	 */
+	//每个块设备有16个次设备,如sbulla1,sbulla2 ... sbulla15
 	dev->gd = alloc_disk(SBULL_MINORS);
 	if (! dev->gd) {
 		printk (KERN_NOTICE "alloc_disk failure\n");
@@ -383,8 +391,10 @@ static void setup_device(struct sbull_dev *dev, int which)
 	dev->gd->fops = &sbull_ops;
 	dev->gd->queue = dev->queue;
 	dev->gd->private_data = dev;
+	//sbulla,sbullb...
 	snprintf (dev->gd->disk_name, 32, "sbull%c", which + 'a');
 	set_capacity(dev->gd, nsectors*(hardsect_size/KERNEL_SECTOR_SIZE));
+	//调用add_disk后,磁盘设备将被激活
 	add_disk(dev->gd);
 	return;
 
@@ -409,6 +419,7 @@ static int __init sbull_init(void)
 	/*
 	 * Allocate the device array, and initialize each one.
 	 */
+	//默认分配4个设备
 	Devices = kmalloc(ndevices*sizeof (struct sbull_dev), GFP_KERNEL);
 	if (Devices == NULL)
 		goto out_unregister;
