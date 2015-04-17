@@ -61,6 +61,7 @@ module_param(request_mode, int, 0);
 /*
  * After this much idle time, the driver will simulate a media change.
  */
+//当应用层close掉块设备后,30s内没有再次打开,这个设备中的内容就无效了
 #define INVALIDATE_DELAY	30*HZ
 
 /*
@@ -70,6 +71,7 @@ struct sbull_dev {
         int size;                       /* Device size in sectors */
         u8 *data;                       /* The data array */
         short users;                    /* How many users */
+		//media是否改变的标志位
         short media_change;             /* Flag a media change? */
         spinlock_t lock;                /* For mutual exclusion */
         struct request_queue *queue;    /* The device request queue */
@@ -211,13 +213,14 @@ static int sbull_open(struct block_device *bdev, fmode_t mode)
 	del_timer_sync(&dev->timer);
 	spin_lock(&dev->lock);
 	if (! dev->users)
-		//没有用户,即第一次打开时才会调用check_disk_change
+		//没有用户,即第一次打开时才会调用check_disk_change,使media有效
 		check_disk_change(bdev);
 	dev->users++;
 	spin_unlock(&dev->lock);
 	return 0;
 }
 
+//最后一个用户调用close时候,才会添加定时器
 static int sbull_release(struct gendisk *disk, fmode_t mode)
 {
 	struct sbull_dev *dev = disk->private_data;
@@ -226,7 +229,10 @@ static int sbull_release(struct gendisk *disk, fmode_t mode)
 	dev->users--;
 
 	if (!dev->users) {
-		//没有用户了,添加定时器,超时的话就会触发定时器,从而是设备无效
+		/* 
+		 * 没有用户了,添加定时器,超时的话就会添加定时器,当超过30s内没有打开这个设备,
+		 * 就会执行定时器超时函数,add_timer添加的超时函数只会执行一次.
+		*/
 		dev->timer.expires = jiffies + INVALIDATE_DELAY;
 		add_timer(&dev->timer);
 	}
@@ -254,6 +260,7 @@ int sbull_revalidate(struct gendisk *gd)
 	struct sbull_dev *dev = gd->private_data;
 	
 	if (dev->media_change) {
+		//清除media_change的状态
 		dev->media_change = 0;
 		memset (dev->data, 0, dev->size);
 	}
@@ -264,6 +271,7 @@ int sbull_revalidate(struct gendisk *gd)
  * The "invalidate" function runs out of the device timer; it sets
  * a flag to simulate the removal of the media.
  */
+//定时器超时函数,标志media中的数据被change了
 void sbull_invalidate(unsigned long ldev)
 {
 	struct sbull_dev *dev = (struct sbull_dev *) ldev;
