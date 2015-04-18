@@ -26,8 +26,10 @@ MODULE_LICENSE("Dual BSD/GPL");
 
 static int sbull_major = 0;
 module_param(sbull_major, int, 0);
+//扇区大小
 static int hardsect_size = 512;
 module_param(hardsect_size, int, 0);
+//扇区个数
 static int nsectors = 1024;	/* How big the drive is */
 module_param(nsectors, int, 0);
 static int ndevices = 4;
@@ -95,8 +97,10 @@ static void sbull_transfer(struct sbull_dev *dev, unsigned long sector,
 		return;
 	}
 	if (write)
+		//将sbull中的数据copy到请求队列的buffer中
 		memcpy(dev->data + offset, buffer, nbytes);
 	else
+		//将请求队列中buffer中的数据copy到sbull中
 		memcpy(buffer, dev->data + offset, nbytes);
 }
 
@@ -107,9 +111,11 @@ static void sbull_request(struct request_queue *q)
 {
 	struct request *req;
 
+	//从请求队列中依次取得请求
 	while ((req = elv_next_request(q)) != NULL) {
 		struct sbull_dev *dev = req->rq_disk->private_data;
 		if (! blk_fs_request(req)) {
+			//不是文件系统请求--移动数据块请求
 			printk (KERN_NOTICE "Skip non-fs request\n");
 			end_request(req, 0);
 			continue;
@@ -118,6 +124,7 @@ static void sbull_request(struct request_queue *q)
     //    			dev - Devices, rq_data_dir(req),
     //    			req->sector, req->current_nr_sectors,
     //    			req->flags);
+    	//是文件系统请求
 		sbull_transfer(dev, req->sector, req->current_nr_sectors,
 				req->buffer, rq_data_dir(req));
 		end_request(req, 1);
@@ -258,12 +265,21 @@ int sbull_media_changed(struct gendisk *gd)
 int sbull_revalidate(struct gendisk *gd)
 {
 	struct sbull_dev *dev = gd->private_data;
-	
+
+   /*
+	* 当前函数不能加上spin_lock,如果有自旋锁的话就会造成spin_lock递归调用.
+	* 考虑下面的情况,当sbulla被open然后close,在INVALIDATE_DELAY过后,sbull_invalidate
+	* 被调用,media_change被置位.我们接着再次open sbulla的时候check_disk_change中就会
+	* 执行sbull_revalidate.注意的是open中调用check_disk_change之前已经上了锁,如果
+	* sbull_revalidate中加锁,一定会造成死锁.
+	*/
+	//spin_lock(&dev->lock);
 	if (dev->media_change) {
 		//清除media_change的状态
 		dev->media_change = 0;
 		memset (dev->data, 0, dev->size);
 	}
+	//spin_unlock(&dev->lock);
 	return 0;
 }
 
@@ -304,10 +320,12 @@ int sbull_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd, unsigned 
 		 * start of data at sector four.
 		 */
 		size = dev->size*(hardsect_size/KERNEL_SECTOR_SIZE);
+		//heads * sectors = 2 ^ 6,所以cylinders须将size右移6位
 		geo.cylinders = (size & ~0x3f) >> 6;
 		geo.heads = 4;
 		geo.sectors = 16;
 		geo.start = 4;
+		//将hd_geometry对象返回给fdisk使用
 		if (copy_to_user((void __user *) arg, &geo, sizeof(geo)))
 			return -EFAULT;
 		return 0;
@@ -340,6 +358,7 @@ static void setup_device(struct sbull_dev *dev, int which)
 	 * Get some memory.
 	 */
 	memset (dev, 0, sizeof (struct sbull_dev));
+	//sbull是LBA地址
 	dev->size = nsectors*hardsect_size;
 	dev->data = vmalloc(dev->size);
 	if (dev->data == NULL) {
@@ -378,6 +397,7 @@ static void setup_device(struct sbull_dev *dev, int which)
         	/* fall into.. */
 	
 	    case RM_SIMPLE:
+		//blk_init_queue中需要分配内存,故此函数可能会失败,在使用队列前一定要检查返回值
 		dev->queue = blk_init_queue(sbull_request, &dev->lock);
 		if (dev->queue == NULL)
 			goto out_vfree;
