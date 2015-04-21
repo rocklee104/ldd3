@@ -86,6 +86,7 @@ static struct sbull_dev *Devices = NULL;
 /*
  * Handle an I/O request.
  */
+//块设备具体的io操作函数
 static void sbull_transfer(struct sbull_dev *dev, unsigned long sector,
 		unsigned long nsect, char *buffer, int write)
 {
@@ -97,21 +98,22 @@ static void sbull_transfer(struct sbull_dev *dev, unsigned long sector,
 		return;
 	}
 	if (write)
-		//将sbull中的数据copy到请求队列的buffer中
+		//将请求队列中buffer中的数据copy到sbull中
 		memcpy(dev->data + offset, buffer, nbytes);
 	else
-		//将请求队列中buffer中的数据copy到sbull中
+		//将sbull中的数据copy到请求队列的buffer中
 		memcpy(buffer, dev->data + offset, nbytes);
 }
 
 /*
  * The simple form of the request function.
  */
+//块设备简单请求函数
 static void sbull_request(struct request_queue *q)
 {
 	struct request *req;
 
-	//从请求队列中依次取得请求
+	//从请求队列中依次取得request
 	while ((req = elv_next_request(q)) != NULL) {
 		struct sbull_dev *dev = req->rq_disk->private_data;
 		if (! blk_fs_request(req)) {
@@ -124,7 +126,7 @@ static void sbull_request(struct request_queue *q)
     //    			dev - Devices, rq_data_dir(req),
     //    			req->sector, req->current_nr_sectors,
     //    			req->flags);
-    	//是文件系统请求
+    	//是文件系统请求,就调用sbull_transfer,这里直接对request操作,没有经过bio
 		sbull_transfer(dev, req->sector, req->current_nr_sectors,
 				req->buffer, rq_data_dir(req));
 		end_request(req, 1);
@@ -135,6 +137,7 @@ static void sbull_request(struct request_queue *q)
 /*
  * Transfer a single BIO.
  */
+//传输单个bio
 static int sbull_xfer_bio(struct sbull_dev *dev, struct bio *bio)
 {
 	int i;
@@ -142,10 +145,13 @@ static int sbull_xfer_bio(struct sbull_dev *dev, struct bio *bio)
 	sector_t sector = bio->bi_sector;
 
 	/* Do each segment independently. */
+	//单个bio中一次提取segment
 	bio_for_each_segment(bvec, bio, i) {
+		//bio->page是一个struct page指针,而驱动中使用虚拟地址
 		char *buffer = __bio_kmap_atomic(bio, i, KM_USER0);
 		sbull_transfer(dev, sector, bio_cur_sectors(bio),
 				buffer, bio_data_dir(bio) == WRITE);
+		//对当前需要传输的sector进行偏移
 		sector += bio_cur_sectors(bio);
 		__bio_kunmap_atomic(bio, KM_USER0);
 	}
@@ -159,11 +165,13 @@ static int sbull_xfer_request(struct sbull_dev *dev, struct request *req)
 {
 	struct bio *bio;
 	int nsect = 0;
-    
+
+	//单个request中依次提取bio
 	__rq_for_each_bio(bio, req) {
 		sbull_xfer_bio(dev, bio);
 		nsect += bio->bi_size/KERNEL_SECTOR_SIZE;
 	}
+	//返回已经传输的sector个数
 	return nsect;
 }
 
@@ -172,6 +180,7 @@ static int sbull_xfer_request(struct sbull_dev *dev, struct request *req)
 /*
  * Smarter request function that "handles clustering".
  */
+//强大的request
 static void sbull_full_request(struct request_queue *q)
 {
 	struct request *req;
@@ -185,9 +194,12 @@ static void sbull_full_request(struct request_queue *q)
 			continue;
 		}
 		sectors_xferred = sbull_xfer_request(dev, req);
+		end_request(req, 1);
+#if 0
 		if (!blk_end_request(req, 1, sectors_xferred)) {
 			blkdev_dequeue_request(req);
 		}
+#endif
 	}
 }
 
@@ -196,6 +208,7 @@ static void sbull_full_request(struct request_queue *q)
 /*
  * The direct make request version.
  */
+//make request直接处理bio,没有经过request
 static int sbull_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct sbull_dev *dev = q->queuedata;
@@ -380,6 +393,7 @@ static void setup_device(struct sbull_dev *dev, int which)
 	 */
 	switch (request_mode) {
 	    case RM_NOQUEUE:
+		//不使用请求队列,需要自己实现make request函数
 		dev->queue = blk_alloc_queue(GFP_KERNEL);
 		if (dev->queue == NULL)
 			goto out_vfree;
@@ -403,6 +417,7 @@ static void setup_device(struct sbull_dev *dev, int which)
 			goto out_vfree;
 		break;
 	}
+	//设置硬件sector size
 	blk_queue_hardsect_size(dev->queue, hardsect_size);
 	dev->queue->queuedata = dev;
 	/*
@@ -421,6 +436,7 @@ static void setup_device(struct sbull_dev *dev, int which)
 	dev->gd->private_data = dev;
 	//sbulla,sbullb...
 	snprintf (dev->gd->disk_name, 32, "sbull%c", which + 'a');
+	//设置sbull的容量
 	set_capacity(dev->gd, nsectors*(hardsect_size/KERNEL_SECTOR_SIZE));
 	//调用add_disk后,磁盘设备将被激活
 	add_disk(dev->gd);
