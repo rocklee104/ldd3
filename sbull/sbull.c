@@ -455,7 +455,9 @@ static int __init sbull_init(void)
 	/*
 	 * Get registered.
 	 */
-	sbull_major = register_blkdev(sbull_major, "sbull");
+	if (!sbull_major)
+		sbull_major = register_blkdev(sbull_major, "sbull");
+	
 	if (sbull_major <= 0) {
 		printk(KERN_WARNING "sbull: unable to get major number\n");
 		return -EBUSY;
