@@ -423,7 +423,7 @@ static void setup_device(struct sbull_dev *dev, int which)
 	/*
 	 * And the gendisk structure.
 	 */
-	//每个块设备有16个次设备,如sbulla1,sbulla2 ... sbulla15
+	//每个块设备最多有16个分区,如sbulla1,sbulla2 ... sbulla15
 	dev->gd = alloc_disk(SBULL_MINORS);
 	if (! dev->gd) {
 		printk (KERN_NOTICE "alloc_disk failure\n");
