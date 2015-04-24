@@ -87,8 +87,9 @@ struct scull_qset {
 struct scull_dev {
 	struct scull_qset *data;  /* Pointer to first quantum set */
 	int quantum;              /* the current quantum size */
+	//一个scull_qset中有多少个quantum
 	int qset;                 /* the current array size */
-	//write后,size会增大
+	//有效数据的大小
 	unsigned long size;       /* amount of data stored here */
 	unsigned int access_key;  /* used by sculluid and scullpriv */
 	struct semaphore sem;     /* mutual exclusion semaphore     */

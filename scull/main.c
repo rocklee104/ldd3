@@ -52,6 +52,7 @@ module_param(scull_qset, int, S_IRUGO);
 MODULE_AUTHOR("Alessandro Rubini, Jonathan Corbet");
 MODULE_LICENSE("Dual BSD/GPL");
 
+//scull_dev数组
 struct scull_dev *scull_devices;	/* allocated in scull_init_module */
 
 
@@ -65,6 +66,7 @@ int scull_trim(struct scull_dev *dev)
 	int qset = dev->qset;   /* "dev" is not-null */
 	int i;
 
+	//遍历qset链表
 	for (dptr = dev->data; dptr; dptr = next) { /* all the list items */
 		if (dptr->data) {
 			for (i = 0; i < qset; i++)
@@ -76,6 +78,7 @@ int scull_trim(struct scull_dev *dev)
 			dptr->data = NULL;
 		}
 		next = dptr->next;
+		//释放当前qset
 		kfree(dptr);
 	}
 	dev->size = 0;
@@ -242,12 +245,15 @@ int scull_open(struct inode *inode, struct file *filp)
 	struct scull_dev *dev; /* device information */
 
 	dev = container_of(inode->i_cdev, struct scull_dev, cdev);
+	//scull设备指针保存在file的private data中
 	filp->private_data = dev; /* for other methods */
 
 	/* now trim to 0 the length of the device if open was write-only */
+	//当设备是以O_WRONLY模式打开的,在写入数据之前就需要清空scull设备
 	if ( (filp->f_flags & O_ACCMODE) == O_WRONLY) {
 		if (down_interruptible(&dev->sem))
 			return -ERESTARTSYS;
+		//清空scull设备
 		scull_trim(dev); /* ignore errors */
 		up(&dev->sem);
 	}
@@ -261,13 +267,14 @@ int scull_release(struct inode *inode, struct file *filp)
 /*
  * Follow the list
  */
-//查找链表中第n个quantum set,如果quantum set不存在,就创建这个quantum set
+//查找链表中第n个qset,遍历链表过程中,如果第n及之前的qset不存在,就需要分配
 struct scull_qset *scull_follow(struct scull_dev *dev, int n)
 {
 	struct scull_qset *qs = dev->data;
 
         /* Allocate first qset explicitly if need be */
 	if (! qs) {
+		//如果链表头不存在,就需要分配
 		qs = dev->data = kmalloc(sizeof(struct scull_qset), GFP_KERNEL);
 		if (qs == NULL)
 			return NULL;  /* Never mind */
@@ -275,6 +282,7 @@ struct scull_qset *scull_follow(struct scull_dev *dev, int n)
 	}
 
 	/* Then follow the list */
+	//因为链表头已经存在了,n就需要先减1
 	while (n--) {
 		if (!qs->next) {
 			qs->next = kmalloc(sizeof(struct scull_qset), GFP_KERNEL);
@@ -354,23 +362,28 @@ ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
 		return -ERESTARTSYS;
 
 	/* find listitem, qset index and offset in the quantum */
+	//第几个qset
 	item = (long)*f_pos / itemsize;
+	//qset内偏移
 	rest = (long)*f_pos % itemsize;
-	s_pos = rest / quantum; q_pos = rest % quantum;
+	//第几个quantum
+	s_pos = rest / quantum;
+	//quantum内偏移
+	q_pos = rest % quantum;
 
 	/* follow the list up to the right position */
 	dptr = scull_follow(dev, item);
 	if (dptr == NULL)
 		goto out;
 	if (!dptr->data) {
-		//如果quantum set中的指针数组不存在就创建指针数组
+		//如果qset中的指针数组不存在就创建指针数组
 		dptr->data = kmalloc(qset * sizeof(char *), GFP_KERNEL);
 		if (!dptr->data)
 			goto out;
 		memset(dptr->data, 0, qset * sizeof(char *));
 	}
 	if (!dptr->data[s_pos]) {
-		//如果quantum set中的指针数组中的quantum不存在就创建指quantum
+		//如果qset中的指针数组中的quantum不存在就创建指quantum
 		dptr->data[s_pos] = kmalloc(quantum, GFP_KERNEL);
 		if (!dptr->data[s_pos])
 			goto out;
@@ -607,6 +620,7 @@ void scull_cleanup_module(void)
 /*
  * Set up the char_dev structure for this device.
  */
+//这个函数不需要返回值是因为即使cdev_add失败,调用cdev_del也不会有任何问题
 static void scull_setup_cdev(struct scull_dev *dev, int index)
 {
 	int err, devno = MKDEV(scull_major, scull_minor + index);
@@ -644,10 +658,11 @@ int scull_init_module(void)
 		return result;
 	}
 
-        /* 
+    /* 
 	 * allocate the devices -- we can't have them static, as the number
 	 * can be specified at load time
 	 */
+	//分配scull_nr_devs个scull设备
 	scull_devices = kmalloc(scull_nr_devs * sizeof(struct scull_dev), GFP_KERNEL);
 	if (!scull_devices) {
 		result = -ENOMEM;
@@ -660,6 +675,7 @@ int scull_init_module(void)
 		scull_devices[i].quantum = scull_quantum;
 		scull_devices[i].qset = scull_qset;
 		init_MUTEX(&scull_devices[i].sem);
+		//进行字符设备的一些初始化工作
 		scull_setup_cdev(&scull_devices[i], i);
 	}
 
