@@ -24,6 +24,8 @@
  * Macros to help debugging
  */
 
+#define SCULL_DEBUG
+
 #undef PDEBUG             /* undef it, just in case */
 #ifdef SCULL_DEBUG
 #  ifdef __KERNEL__
@@ -62,11 +64,11 @@
  * The array (quantum-set) is SCULL_QSET long.
  */
 #ifndef SCULL_QUANTUM
-#define SCULL_QUANTUM 4000
+#define SCULL_QUANTUM 0x4000
 #endif
 
 #ifndef SCULL_QSET
-#define SCULL_QSET    1000
+#define SCULL_QSET    0x1000
 #endif
 
 /*

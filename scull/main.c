@@ -312,7 +312,7 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
 
 	if (down_interruptible(&dev->sem))
 		return -ERESTARTSYS;
-	//检查f_pos的合法性
+	//检查f_pos的合法性f_pos的合法范围在[0,dev->size - 1]之间
 	if (*f_pos >= dev->size)
 		goto out;
 	if (*f_pos + count > dev->size)
@@ -348,6 +348,7 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
 	return retval;
 }
 
+//f_pos指向数据区栈顶,表示下一次写入数据的起始位置,目前并没有数据
 ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
@@ -401,6 +402,7 @@ ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
 
         /* update the size */
 	if (dev->size < *f_pos)
+		//dev->size从1开始
 		dev->size = *f_pos;
 
   out:
